@@ -1,6 +1,7 @@
 #include "include/v8.h"
 #include "include/libplatform/libplatform.h"
 #include <iostream>
+#include <string>
 
 using namespace v8;
 
@@ -36,72 +37,82 @@ void Print(const v8::FunctionCallbackInfo<v8::Value>& args) {
   fflush(stdout);
 }
 
-int main(int argc, char* argv[]) {
+v8::Isolate* isolate;
+Platform* _platform;
+Persistent<Context> context_;
+
+extern "C" void init() {
   // Initialize V8.
   V8::InitializeICU();
-  Platform* platform = platform::CreateDefaultPlatform();
-  V8::InitializePlatform(platform);
+  _platform = platform::CreateDefaultPlatform();
+  V8::InitializePlatform(_platform);
   V8::Initialize();
-  v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
+  // v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
 
   // Create a new Isolate and make it the current one.
-  ShellArrayBufferAllocator array_buffer_allocator;
+  ShellArrayBufferAllocator *array_buffer_allocator = new ShellArrayBufferAllocator();
   v8::Isolate::CreateParams create_params;
-  create_params.array_buffer_allocator = &array_buffer_allocator;
-  v8::Isolate* isolate = v8::Isolate::New(create_params);
+  create_params.array_buffer_allocator = array_buffer_allocator;
+  isolate = v8::Isolate::New(create_params);
 
-  {
-    Isolate::Scope isolate_scope(isolate);
+  HandleScope handle_scope(isolate);
 
-    // Create a stack-allocated handle scope.
-    HandleScope handle_scope(isolate);
-
-    v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
-    global->Set(v8::String::NewFromUtf8(isolate, "print"),
-                v8::FunctionTemplate::New(isolate, Print));
-
-    // Create a new context.
-    Local<Context> context = Context::New(isolate, NULL, global);
-
-    if (context.IsEmpty()) {
-      fprintf(stderr, "Error creating context\n");
-      return 1;
-    }
-
-    // Enter the context for compiling and running the hello world script.
-    Context::Scope context_scope(context);
-
-    // Create a string containing the JavaScript source code.
-    Local<String> source = String::NewFromUtf8(isolate, "print('Hello' + ', World!');");
-
-    // Compile the source code.
-    Local<Script> script = Script::Compile(source);
-
-    // Run the script to get the result.
-    Local<Value> result = script->Run();
-
-    // Convert the result to an UTF8 string and print it.
-    // String::Utf8Value utf8(result);
-    // printf("%s\n", *utf8);
-
-    // Run the script to get the result.
-    source = String::NewFromUtf8(isolate, "var i = 1;");
-    script = Script::Compile(source);
-    result = script->Run();
-
-    source = String::NewFromUtf8(isolate, "print('i = ' + i);");
-    script = Script::Compile(source);
-    result = script->Run();
-
-    // Convert the result to an UTF8 string and print it.
-    // String::Utf8Value utf8_b(result);
-    // printf("%s\n", *utf8_b);
+  v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
+  global->Set(v8::String::NewFromUtf8(isolate, "print"),
+              v8::FunctionTemplate::New(isolate, Print));
+  v8::Handle<v8::Context> context = Context::New(isolate, NULL, global);
+  if (context.IsEmpty()) {
+    fprintf(stderr, "Error creating context\n");
   }
-  
+  context_.Reset(isolate, context);
+}
+
+extern "C" const char *run(const char *src) {
+  Isolate::Scope isolate_scope(isolate);
+
+  // Create a stack-allocated handle scope.
+  HandleScope handle_scope(isolate);
+
+  // Create a new context.
+  // context = Context::New(isolate, NULL, global);
+  v8::Local<v8::Context> context = v8::Local<v8::Context>::New(isolate, context_);
+
+  // Enter the context for compiling and running the hello world script.
+  Context::Scope context_scope(context);
+
+  Local<String> source = String::NewFromUtf8(isolate, src);
+  Local<Script> script = Script::Compile(source);
+  Local<Value> result = script->Run();
+
+  // Convert the result to an UTF8 string and print it.
+  // String::Utf8Value utf8_b(result);
+  // printf("%s\n", *utf8_b);
+
+  String::Utf8Value utf8(result);
+  std::string from = std::string(*utf8);
+  return from.c_str();
+}
+
+extern "C" void cleanup() {
+  HandleScope handle_scope(isolate);
+
+  context_.Reset();
   // Dispose the isolate and tear down V8.
-  isolate->Dispose();
+  // isolate->Dispose();
   V8::Dispose();
   V8::ShutdownPlatform();
-  delete platform;
+  delete _platform;
+}
+
+int main(int argc, char* argv[]) {
+  init();
+
+  run("print ('hello, world');");
+  run("var i = 1;");
+  run("i += 1;");
+  run("print ('i = ' + i);");
+
+  cleanup();
+
   return 0;
 }
