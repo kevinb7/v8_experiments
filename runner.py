@@ -17,8 +17,40 @@ result = hello_world.run("JSON.stringify({ x:5, y: 10 });");
 print cast(result, c_char_p).value
 # hello_world.run("console.log('hello from the console.');")
 
-hello_world.run('throw "something bad happened";')
+hello_world.run('function bar() { throw "something bad happened"; }\nbar();\nprint("after throw");')
 hello_world.run('print("everything is okay now.")')
+
+hello_world.run("""
+
+a = [1,2,3,4,5];
+for (i of a) {
+	print(i);
+}
+
+function *genFunc() {
+	var i = 0;
+	while(true) {
+		yield i++;
+	}
+}
+
+print('now with a generator')
+var gen = genFunc();
+
+print(gen.next().value);
+print(gen.next().value);
+
+/*
+setTimeout(function () {
+	print("finished");
+}, 0)	
+*/
+var now = Date.now();
+print(`now = ${now}`);
+
+""")
+
+# hello_world.print_date()
 
 hello_world.cleanup()
 

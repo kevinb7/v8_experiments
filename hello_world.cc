@@ -2,6 +2,7 @@
 #include "include/libplatform/libplatform.h"
 #include <iostream>
 #include <string>
+#include <Python.h>
 
 using namespace v8;
 
@@ -57,6 +58,7 @@ extern "C" void init() {
 
   HandleScope handle_scope(isolate);
 
+  isolate->SetCaptureStackTraceForUncaughtExceptions(true);
   v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
   global->Set(v8::String::NewFromUtf8(isolate, "print"),
               v8::FunctionTemplate::New(isolate, Print));
@@ -82,15 +84,39 @@ extern "C" const char *run(const char *src) {
 
   Local<String> source = String::NewFromUtf8(isolate, src);
   Local<Script> script = Script::Compile(source);
-  Local<Value> result = script->Run();
 
-  // Convert the result to an UTF8 string and print it.
-  // String::Utf8Value utf8_b(result);
-  // printf("%s\n", *utf8_b);
+  TryCatch trycatch(isolate);
+  Local<Value> value = script->Run();
+  if (value.IsEmpty()) {
+    Local<Value> exception = trycatch.Exception();
+    String::Utf8Value exception_str(exception);
+    printf("Caught and exception: %s\n", *exception_str);
+    Local<Message> message = trycatch.Message();
+    if (message.IsEmpty()) {
+      // V8 didn't provide any extra information about this error; just
+      // print the exception.
+      printf("%s\n", *exception_str);
+    } else {
+      printf("line number: %d\n", message->GetLineNumber());
 
-  String::Utf8Value utf8(result);
-  std::string from = std::string(*utf8);
-  return from.c_str();
+      Local<StackTrace>stack_trace = message->GetStackTrace();
+      if (stack_trace.IsEmpty()) {
+        printf("no stack trace info.\n");
+      } else {
+        printf("frame count = %d\n", stack_trace->GetFrameCount());
+        for (int i = 0; i < stack_trace->GetFrameCount(); i++) {
+          Local<StackFrame> frame = stack_trace->GetFrame(i);
+          String::Utf8Value temp_str(frame->GetFunctionName());
+          printf("%d:%d in function name: %s\n", frame->GetLineNumber(), frame->GetColumn(), *temp_str);
+        }
+      }
+    }
+    return NULL;
+  } else {
+    String::Utf8Value utf8_value(value);
+    std::string result_string = std::string(*utf8_value);
+    return result_string.c_str();
+  } 
 }
 
 extern "C" void cleanup() {
@@ -102,6 +128,15 @@ extern "C" void cleanup() {
   V8::Dispose();
   V8::ShutdownPlatform();
   delete _platform;
+}
+
+extern "C" int print_date() {
+  // Py_SetProgramName(argv[0]);  /* optional but recommended */
+  Py_Initialize();
+  PyRun_SimpleString("from time import time,ctime\n"
+                     "print 'Today is',ctime(time())\n");
+  Py_Finalize();
+  return 0;
 }
 
 int main(int argc, char* argv[]) {
